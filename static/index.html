@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Invoice Extraction System</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+        .container { background: white; border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); max-width: 600px; width: 90%; padding: 40px; }
+        h1 { color: #333; margin-bottom: 10px; font-size: 28px; }
+        .subtitle { color: #666; margin-bottom: 30px; font-size: 14px; }
+        .upload-box { border: 2px dashed #667eea; border-radius: 8px; padding: 40px; text-align: center; cursor: pointer; transition: all 0.3s; margin-bottom: 20px; }
+        .upload-box:hover { border-color: #764ba2; background: rgba(102, 126, 234, 0.05); }
+        .upload-box.dragover { border-color: #764ba2; background: rgba(102, 126, 234, 0.1); }
+        .upload-icon { font-size: 48px; margin-bottom: 15px; }
+        .upload-text { color: #666; font-size: 16px; margin-bottom: 8px; }
+        .upload-hint { color: #999; font-size: 13px; }
+        input[type="file"] { display: none; }
+        .button-group { display: flex; gap: 10px; margin-bottom: 20px; }
+        button { flex: 1; padding: 12px 20px; border: none; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.3s; }
+        .btn-primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4); }
+        .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+        .btn-secondary { background: #f0f0f0; color: #333; }
+        .btn-secondary:hover { background: #e0e0e0; }
+        #filename { color: #667eea; font-weight: 600; margin-bottom: 15px; font-size: 14px; }
+        .results { display: none; margin-top: 30px; padding-top: 30px; border-top: 2px solid #f0f0f0; }
+        .results.show { display: block; }
+        .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px; }
+        .stat-box { background: #f8f9fa; padding: 15px; border-radius: 6px; }
+        .stat-label { color: #999; font-size: 12px; text-transform: uppercase; margin-bottom: 5px; }
+        .stat-value { color: #667eea; font-size: 24px; font-weight: bold; }
+        .markdown-output { background: #f8f9fa; padding: 20px; border-radius: 6px; font-family: 'Courier New', monospace; font-size: 12px; max-height: 400px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word; color: #333; }
+        .error { color: #d32f2f; background: #ffebee; padding: 15px; border-radius: 6px; margin-bottom: 20px; display: none; }
+        .error.show { display: block; }
+        .spinner { display: none; width: 20px; height: 20px; border: 3px solid #f0f0f0; border-top: 3px solid #667eea; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .processing { display: none; text-align: center; padding: 20px; }
+        .processing.show { display: block; }
+        .processing-text { color: #666; margin-top: 10px; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📋 Invoice Extraction System</h1>
+        <p class="subtitle">Upload a PDF with invoices to extract structured data</p>
+        <div class="upload-box" id="uploadBox">
+            <div class="upload-icon">📄</div>
+            <p class="upload-text">Click to upload or drag and drop</p>
+            <p class="upload-hint">PDF files only</p>
+            <input type="file" id="fileInput" accept=".pdf">
+        </div>
+        <div id="filename"></div>
+        <div class="error" id="error"></div>
+        <div class="processing" id="processing">
+            <div class="spinner"></div>
+            <p class="processing-text">Processing your invoices...</p>
+        </div>
+        <div class="button-group">
+            <button class="btn-primary" id="extractBtn" onclick="extractInvoices()">Extract Invoices</button>
+            <button class="btn-secondary" id="resetBtn" onclick="resetForm()">Clear</button>
+        </div>
+        <div class="results" id="results">
+            <div class="stats">
+                <div class="stat-box">
+                    <div class="stat-label">Total Invoices</div>
+                    <div class="stat-value" id="invoiceCount">0</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-label">Status</div>
+                    <div class="stat-value" id="status">✓ Extracted</div>
+                </div>
+            </div>
+            <div>
+                <p style="font-weight: 600; margin-bottom: 10px; color: #333;">Extraction Results:</p>
+                <div class="markdown-output" id="output"></div>
+            </div>
+        </div>
+    </div>
+    <script>
+        const uploadBox = document.getElementById('uploadBox');
+        const fileInput = document.getElementById('fileInput');
+        const filenameDisplay = document.getElementById('filename');
+        const extractBtn = document.getElementById('extractBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const errorBox = document.getElementById('error');
+        const processingBox = document.getElementById('processing');
+        const resultsBox = document.getElementById('results');
+        const outputDiv = document.getElementById('output');
+        const invoiceCountDiv = document.getElementById('invoiceCount');
+        let selectedFile = null;
+        uploadBox.addEventListener('click', () => fileInput.click());
+        uploadBox.addEventListener('dragover', (e) => { e.preventDefault(); uploadBox.classList.add('dragover'); });
+        uploadBox.addEventListener('dragleave', () => uploadBox.classList.remove('dragover'));
+        uploadBox.addEventListener('drop', (e) => { e.preventDefault(); uploadBox.classList.remove('dragover'); handleFile(e.dataTransfer.files[0]); });
+        fileInput.addEventListener('change', (e) => handleFile(e.target.files[0]));
+        function handleFile(file) {
+            if (!file || file.type !== 'application/pdf') { showError('Please select a valid PDF file'); return; }
+            selectedFile = file;
+            filenameDisplay.textContent = '✓ ' + file.name + ' (' + (file.size / 1024 / 1024).toFixed(2) + ' MB)';
+            errorBox.classList.remove('show');
+        }
+        async function extractInvoices() {
+            if (!selectedFile) { showError('Please select a PDF file first'); return; }
+            extractBtn.disabled = true;
+            processingBox.classList.add('show');
+            errorBox.classList.remove('show');
+            const formData = new FormData();
+            formData.append('file', selectedFile);
+            try {
+                const response = await fetch('/api/extract-invoices', { method: 'POST', body: formData });
+                const data = await response.json();
+                processingBox.classList.remove('show');
+                if (response.ok) {
+                    invoiceCountDiv.textContent = data.count;
+                    outputDiv.textContent = data.markdown;
+                    resultsBox.classList.add('show');
+                } else { showError(data.message || 'Error processing PDF'); }
+            } catch (error) {
+                processingBox.classList.remove('show');
+                showError('Connection error: ' + error.message);
+            }
+            extractBtn.disabled = false;
+        }
+        function showError(message) {
+            errorBox.textContent = '❌ ' + message;
+            errorBox.classList.add('show');
+        }
+        function resetForm() {
+            selectedFile = null;
+            fileInput.value = '';
+            filenameDisplay.textContent = '';
+            errorBox.classList.remove('show');
+            resultsBox.classList.remove('show');
+        }
+    </script>
+</body>
+</html>
